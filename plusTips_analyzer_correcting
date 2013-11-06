@@ -1,0 +1,781 @@
+%%%%% plusTips_analyzer_correcting
+
+% PRN JHMI
+% 10/21/11
+
+% This is the updated version of plusTips_analyzer.  This version takes the
+% Instant_data, removes 'bad' links, then recalculates the
+% Growth/Shrinkage/Pause means and such.
+
+% A 'bad' link is calculated as such - Form histogram with Instant_data
+% with number of bins equal to the number of tracks.  Starting with the bin
+% for zero step length, move outward in both directions until a bin with
+% zero steps in it is found.  Throw out everything outward from that
+% value.  This should cut out most of the really high-speed crap.  
+
+% The next step is to recalculate the transition frequencies.  Not totally
+% sure how to accomplish that at this moment, but I'll figure it out.
+
+% fixed:
+% frame2frameVel_micPerMin
+% Instant_data
+% Useful_data
+% nTrack_sF_eF_vMicPerMin_trackType_lifetime_totalDispPix
+% stats
+
+% Everything else unfixed (still has bad tracks)
+
+clear all
+
+[base_folder] = 'K:\Data\010611\10232013';
+[directories] = dir(base_folder);
+
+    fil_check = 500; % Max files to process through whole rigamarole.  Set higher than length(directories). Not needed
+    fil_count = 0;
+    
+    Just_all_of_it = [];
+	Mov_pile = [];
+    ROI_area_pixels = [];
+    roi_count = 0;
+    
+    n_bads = [];
+    n_goods = [];
+    
+for fil = 3:length(directories) % first two are always . and ...
+
+    
+        if directories(fil).isdir && ~strcmp(directories(fil).name,'.') && ~strcmp(directories(fil).name,'..')
+
+            fil_count =  fil_count + 1;
+
+
+
+        [folder] = fullfile(base_folder, directories(fil).name);
+
+
+
+        [images_folder] = fullfile(folder, 'images');
+        [images_files] = fullfile(images_folder, '*.tif');
+
+        [images_list] = dir(images_files);
+
+        fname = fullfile(images_folder, images_list(1).name);
+
+        im_info = imfinfo(fname);
+
+        picture_file = imread(fname, 'TIFF');
+
+
+        %%%%% Fix this so that multiple roi's are possible
+
+        [roi_searcher] = dir(fullfile(folder, 'roi*'));
+                
+        for roi_file = 1:length(roi_searcher)
+
+
+            %roi_count = roi_count+1;
+            [summary_files] = fullfile(folder, roi_searcher(roi_file).name, 'meta', 'projData.mat');
+
+            
+            load(summary_files);
+            
+            projDataCorr = projData;
+            
+            %[roi_files] = fullfile(folder, roi_searcher(roi_file).name, 'roiYX.mat');
+            
+            [roi_files] = fullfile(folder,roi_searcher(roi_file).name, 'roiMask.tif');
+
+            %load(roi_files);
+            
+            %ROI_area_pixels = [ROI_area_pixels; polyarea(roiYX(:,1), roiYX(:,2))];
+            
+            % How does this ^ address the problem that the outer area is
+            % defined as outer area minus inner area?  It doesn't!  It was
+            % being corrected by hand before.  Time to stop that.
+            % Copy_folder is going to bring along roiMask and
+            % ROI_area_pixels is going to be calculated with that instead
+            % of this roiYX crap, which doesn't work for donuts.  
+            
+            % New code to fix problem above
+            
+            roi_in = imread(roi_files, 'TIFF');
+            
+            ROI_area_pixels = [ROI_area_pixels; sum(roi_in(:))];
+
+            max_plot3D = size(projData.xCoord, 1);
+
+            clear Trace_cells
+            
+
+            
+            [dir_now] = cd;
+            [movie_dir] = fullfile(folder, roi_searcher(roi_file).name, 'feat');
+            cd(movie_dir);
+            Mov_pile(length(Mov_pile)+1).file = load('movieInfo.mat');
+            cd(dir_now);
+            
+            Instant_data = projDataCorr.frame2frameVel_micPerMin;
+
+%%%% Pull out the Instant data
+                        
+
+            [Inst_counts Inst_vect] = hist(Instant_data(:), 1000);
+            
+            %%% Find values in Instant_data that signify bad links.  
+            
+            [Inst_bin Inst_vect] = hist(Instant_data(:), size(Instant_data, 1));
+            
+            Min_inst = find(abs(Inst_vect) == min(abs(Inst_vect)));
+            Min_val = Inst_vect(Min_inst);
+            Low_cut = max(Inst_vect(logical((Inst_bin == 0).*(Inst_vect < Min_val))));
+            High_cut = min(Inst_vect(logical((Inst_bin == 0).*(Inst_vect > Min_val))));
+            
+            if isempty(High_cut)
+                
+                High_cut = max(Inst_vect);
+                
+            end
+            
+            if isempty(Low_cut)
+                
+                Low_cut = min(Inst_vect);
+                
+            end
+            
+            % Cut out the crap.  Not so simple as just taking out bad
+            % links.  Gotta find bad links, cut them into new tracks in X
+            % and Y.  
+            
+
+            % So in the Instant_data the bad value at n means a bad link
+            % between n-1 and n.  So take n:end and make a new row in X and
+            % Y.  
+            
+            % Test changes here
+            % Commented out now that it works.  
+% 
+%             Instant_data = projData.frame2frameVel_micPerMin(22:23,:);
+%             projDataCorr = projData;
+%             projDataCorr.xCoord = projData.xCoord(22:23,:);
+%             projDataCorr.yCoord = projData.yCoord(22:23,:);
+% %             
+            Track_origin = 1:(size(Instant_data, 1));
+            
+            for m = 1:size(Instant_data, 1)
+                
+                bads = find(((Instant_data(m,:) > High_cut)|(Instant_data(m,:) < Low_cut)));
+                bads = [(bads(bads < length(Instant_data(m,:))) + 1) length(Instant_data(m,:))];
+
+                n_bads = [n_bads; length(bads)];
+                n_goods = [n_goods; sum(~isnan(Instant_data(m,:)))];
+                
+                for k = 1:(length(bads)-1)
+                                       
+                    [a b] = size(projDataCorr.xCoord);
+                    projDataCorr.xCoord(a+1, :) = NaN;
+                    projDataCorr.xCoord(a+1, bads(k):(bads(k+1)-1)) = projDataCorr.xCoord(m, bads(k):(bads(k+1)-1));
+                                       
+                    projDataCorr.yCoord(a+1, :) = NaN;
+                    projDataCorr.yCoord(a+1, bads(k):(bads(k+1)-1)) = projDataCorr.yCoord(m, bads(k):(bads(k+1)-1));
+                                        
+                    Track_origin = [Track_origin m];
+                                       
+                end
+                
+                projDataCorr.xCoord(m, bads(1):bads(end)) = NaN;
+                projDataCorr.yCoord(m, bads(1):bads(end)) = NaN;
+                              
+            end
+            
+            Track_origin((projDataCorr.trackingParameters.minTrackLen > sum(~isnan(projDataCorr.yCoord), 2))) = [];
+            projDataCorr.xCoord((projDataCorr.trackingParameters.minTrackLen > sum(~isnan(projDataCorr.xCoord), 2)), :) = [];
+            projDataCorr.yCoord((projDataCorr.trackingParameters.minTrackLen > sum(~isnan(projDataCorr.yCoord), 2)), :) = [];
+            
+            % Recalculate Instant_data
+            
+            Instant_recalc = zeros(size(projDataCorr.xCoord));
+            Instant_recalc(Instant_recalc == 0) = NaN;
+            
+            for m = 1:size(projDataCorr.xCoord, 1);
+                
+                for n = 1:size(projDataCorr.xCoord, 2)-1;
+                    
+                    Now = [projDataCorr.xCoord(m,n) projDataCorr.yCoord(m,n)];
+                    Then = [projDataCorr.xCoord(m, n+1) projDataCorr.yCoord(m, n+1)];
+                    
+                    Instant_recalc(m,n) = sqrt(sum((Now-Then).^2));
+                    
+                end
+                
+            end
+            
+            %Instant_recalc is displacement pairs in pixels per step.  Want
+            %it in um/min below.  
+            
+            % Instant_rescale is changed here to be in um/min speeds for
+            % each step rather than straight displacements.  
+            
+            if strcmp(base_folder, 'C:\Data\112111_CLASP_Analysis')
+            
+                projDataCorr.pixSizeNm = 106.7;  % Altered here to correct for previous error with Nikon scope and CLASP data
+            
+            end
+            
+            Instant_rescale = 60*(Instant_recalc*projDataCorr.pixSizeNm)/(1000*projDataCorr.secPerFrame);
+            
+            % Get stuff that was negative before negative now.
+            
+            for k = 1:size(Instant_rescale,1);
+            
+                Instant_rescale(k,(Instant_data(Track_origin(k),:) < 0)) = -Instant_rescale(k,(Instant_data(Track_origin(k),:) < 0));
+                
+            end
+            
+            Instant_data = Instant_rescale;
+            figure(4)
+            hist(Instant_data(:), 100, 'LineSize', 2);
+            
+            % At this point Instant_rescale should be the same as
+            % Instant_data, but with the bad links removed.  Bad links
+            % removed in projDataCorr X and Y coordinates as well, with new
+            % tracks made when bad links need to be severed.  
+            % To keep consistiency for later, replace Instant_data with
+            % Instant_rescale.  
+            
+            Instant_data = Instant_rescale;
+            projDataCorr.frame2frameVel_micPerMin = Instant_data;    
+            
+
+            
+            Inst_mean = mean(Instant_data(~isnan(Instant_data(:))));
+            Inst_std = std(Instant_data(~isnan(Instant_data(:))));
+        
+                        
+            Report.Inst_mean = Inst_mean;
+            Report.Inst_std = Inst_std;
+
+            Trace_cells{size(projDataCorr.xCoord, 1)} = [];
+            trace_length = zeros(size(projDataCorr.xCoord, 1), 1);
+            trace_speed = zeros(size(projDataCorr.xCoord, 1), 1);
+
+            for k = 1:size(projDataCorr.xCoord, 1);
+
+                Trace_cells{k} = [projDataCorr.xCoord(k,:); projDataCorr.yCoord(k,:)];
+
+            end    
+% 
+%             for k = 1:length(Trace_cells);
+% 
+%                 trace_length(k) = sum(~isnan(Trace_cells{k}(1,:)), 2);
+%                 trace_speed(k) = mean(abs(projData.frame2frameVel_micPerMin(k,(~isnan(projData.frame2frameVel_micPerMin(k,:))))));
+% 
+%             end
+            
+            for k = 1:length(Trace_cells);
+
+                trace_length(k) = sum(~isnan(Trace_cells{k}(1,:)), 2);
+                trace_speed(k) = mean((projDataCorr.frame2frameVel_micPerMin(k,(~isnan(projDataCorr.frame2frameVel_micPerMin(k,:))))));
+
+            end
+
+
+            figure(2)
+            for k = 1:length(Trace_cells);
+
+                plot(Trace_cells{k}(1,:), Trace_cells{k}(2,:), 'b', 'LineWidth', 2)
+                hold on
+
+            end
+            hold off
+
+
+            
+            % The question now is how to divide up these tracks into what
+            % we need.  
+            
+            % Simplest way is to make a chart of the first three columns of
+            % Useful_data, then pick out the parts of Instant_data that
+            % match the start and end frames.  Problem might be ambiguity
+            % so you'd have to record where the track came from when you
+            % sorted them out.  
+            
+            % Using the same designations as decided previously.  Could
+            % write a routine to decide this on or own, but that's not much
+            % fun.  
+            
+            Useful_data = projData.nTrack_sF_eF_vMicPerMin_trackType_lifetime_totalDispPix;
+            
+            for k = 1:max(Track_origin)
+                
+                Current_Instant = nansum(Instant_data((Track_origin == k), :), 1);
+                
+                %Fix this to use displacement when you get displacement.
+                %Leaving XY in here just to have it if needed, but I don't
+                %think so.  It's the same problem as above - a single big
+                %jump and the average is destroyed, but we can fix it later
+                %if needed.  
+                %Current_XY = [nansum(projData.xCoord((Track_origin ==2), :)); nansum(projData.yCoord((Track_origin ==2), :))];
+                
+                Current_Instant(Current_Instant == 0) = NaN;
+                %Current_disp
+                %Current_XY(Current_XY == 0) = NaN;
+                
+                Useful_pull = Useful_data(Useful_data(:,1) == k,:);
+                
+                for m = 1:size(Useful_pull, 1)
+                    
+                    Useful_pull(m,4) = mean(Current_Instant(:,[Useful_pull(m,2):(Useful_pull(m,3)-1)]));      
+                    
+                end
+                
+                Useful_data(Useful_data(:,1) == k, :) = Useful_pull;
+                
+            end
+            
+            Useful_data(isnan(Useful_data(:,4)),:) = [];
+                
+            % There's an issue in plusTipDynamParam that gets thrown if the first entry in Useful_data
+            % isn't a growth.  This can happen when the tracks get split
+            % due to bad links and then the then-shortened tracks get
+            % thrown out.  I think just recursively deleting any case where
+            % this is true so that Useful data always leads off with a
+            % growth should be OK.  This might not be totally true,
+            % however, since other tracks can therefore lead off with a
+            % non-growth, but I'll cross that bridge when/if I come to it.
+            
+            while ~isempty(Useful_data((Useful_data(1,5) ~=1), :)) 
+                
+                Useful_data((Useful_data(1,5) ~=1), :) = [];
+
+            end
+               
+            
+            % feed this to plusTipDynamParam to calculate stats from the
+            % now-trimmed Usefu_data matrix.
+            
+            projDataCorr.nTrack_sF_eF_vMicPerMin_trackType_lifetime_totalDispPix = Useful_data;
+            [projDataCorr.stats ~] = plusTipDynamParam(Useful_data);
+            
+            
+            Just_all_of_it{length(Just_all_of_it)+1} = projData;
+            
+        %  .nTrack_sF_eF_vMicPerMin_trackType_lifetime_totalDispPix
+        %       matrix containing the profile of all the tracks, where the columns
+        %       represent:
+        %           1. track number
+        %           2. start frame
+        %           3. end frame
+        %           4. speed (microns/min), negative for bgaps
+        %           5. subtrack type
+        %              (1=growth, 2=forward gap, 3=backward gap, 4=unclassifed gap,
+        %              5=forward gap reclassified as growth, 6=backward gap
+        %              reclassified as pause)
+        %           6. lifetime (frames)
+        %           7. total displacement (pixels), negative for bgaps
+
+
+            figure(3)
+            [bin_counts bin_vect] = hist(Useful_data(:, 4), 200);
+            hist(Useful_data((Useful_data(:,5) == 1), 4), bin_vect);
+            hold on
+            hist(Useful_data((Useful_data(:,5) == 2), 4), bin_vect)
+            hist(Useful_data((Useful_data(:,5) == 3), 4), bin_vect)
+            hist(Useful_data((Useful_data(:,5) == 4), 4), bin_vect)
+            hist(Useful_data((Useful_data(:,5) == 5), 4), bin_vect)
+            hist(Useful_data((Useful_data(:,5) == 6), 4), bin_vect)
+            hist_hand = findobj(gca,'Type','patch');
+            set(hist_hand(1), 'FaceColor', 'm', 'EdgeColor', 'none')
+            set(hist_hand(2), 'FaceColor', 'g', 'EdgeColor', 'none')
+            set(hist_hand(3), 'FaceColor', 'b', 'EdgeColor', 'none')
+            set(hist_hand(4), 'FaceColor', 'r', 'EdgeColor', 'none')
+            set(hist_hand(5), 'FaceColor', 'k', 'EdgeColor', 'none')
+            set(hist_hand(6), 'FaceColor', 'c', 'EdgeColor', 'none')
+            legend(hist_hand,'B -> Pause', 'F -> Growth', 'Unclass', 'B Gap', 'F Gap', 'Growth')
+            hold off
+
+            F_motion = Useful_data(((Useful_data(:,5) == 1) | (Useful_data(:,5) == 5)), :);
+            [F_counts F_vect] = hist(F_motion(:,4), 200);
+
+            F_mean = mean(F_motion(:,4));
+            F_std = std(F_motion(:,4));
+
+
+            Report.F_mean = F_mean;
+            Report.F_std = F_std;
+
+
+            Report_cell{fil} = Report;
+
+            %%%%%%%%%%%%%%%%%% Colors %%%%%%%%%%%%%%%
+
+            picture_file = double(picture_file);
+
+            %%%% Fix speed color lists %%%
+
+            [length_counts length_bins] = hist(trace_length, numel(trace_length)/100);
+            length_thresh = 0.02*max(length_counts);
+
+            [speed_counts speed_bins] = hist(trace_speed, numel(trace_speed)/100);
+            speed_thresh = 0.02*max(speed_counts);
+%             trace_speed(trace_speed > max(speed_bins(speed_counts > speed_thresh))) ...
+%                 = max(speed_bins(speed_counts > speed_thresh));
+% 
+%             too_fast = find(trace_speed == max(speed_bins(speed_counts > speed_thresh)));
+% 
+%             for k = 1:length(too_fast)
+% 
+%                 Trace_cells{too_fast(k)} = [];
+% 
+%             end
+% 
+%             trace_speed(too_fast) = [];
+%             trace_length(too_fast) = [];
+
+%             max_plot3D = max_plot3D - sum(max_plot3D >= too_fast);
+
+            Trace_hold = Trace_cells;
+            Trace_items = find(~cellfun(@isempty, Trace_hold));
+            clear Trace_cells
+
+            for k = 1:length(Trace_items)
+
+                Trace_cells{k} = Trace_hold{Trace_items(k)};
+
+            end
+
+            length_colors = Vector2Colormap(trace_length*1.01, 'jet');
+            speed_colors = Vector2Colormap(trace_speed*1.01, 'jet');
+            
+            % Override length_colors and speed_colors to work with
+            % arbitrary limits
+            
+%             min_speed_color = -20;
+%             max_speed_color = 45;
+%             
+%             trace_speed(trace_speed > max_speed_color) = NaN;
+%             trace_speed(trace_speed < min_speed_color) = 0;
+%             
+%             speed_colors = Vector2Colormap(trace_speed, 'jet');
+%             %%%%%
+%             min_length_color  = 3;
+%             max_length_color = 160;
+%             
+%             trace_length(trace_length > max_length_color) = NaN;
+%             trace_length(trace_length < min_length_color) = 0;
+%             
+%             length_colors = Vector2Colormap(trace_length, 'jet');
+            
+
+            %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+            
+%             figure(8)
+% 
+% 
+%             image_plot = imagesc(Vector2Colormap(picture_file, 'gray'));
+%              set(gca,'XDir','normal');   % set as 'reverse' or 'normal' to change
+%              set(gca, 'YDir', 'normal');% orientation of image to match other plots
+%             hold on
+%             for k = 1:length(Trace_cells);
+% 
+%                 plot(Trace_cells{k}(1,:), Trace_cells{k}(2,:), 'r', 'LineWidth', 2)
+%                 hold on
+% 
+%             end
+%             hold off
+%             colorbar;
+%             title('All Trajectories');
+%             uistack(image_plot, 'bottom');
+%             hold off
+% 
+% 
+%             figure(9)
+% 
+%             image_plot = imagesc(Vector2Colormap(picture_file, 'gray'));
+%              set(gca,'XDir','normal');   % set as 'reverse' or 'normal' to change
+%              set(gca, 'YDir', 'normal');% orientation of image to match other plots
+%             hold on
+%             for k = 1:length(Trace_cells);
+% 
+%                 [color_here] = length_colors(k,:);
+% 
+%                 if isnan(color_here)
+% 
+%                     color_here = [1 1 1];
+% 
+%                 end
+% 
+%                 plot(Trace_cells{k}(1,:), Trace_cells{k}(2,:), 'Color', color_here, 'LineWidth', 2, 'Marker', '.')
+%                 hold on
+% 
+%             end
+%             hold off
+%             c_bar_length = colorbar('YTick',0:0.1:1,'YTickMode','manual');
+%             ylabel(c_bar_length, 'Trace Length (frames)');
+% %              if min(trace_length) ~= max(trace_length)
+% %                 colorbar_labels = (min(trace_length):((max(trace_length)...
+% %                     - min(trace_length))/10):max(trace_length));
+% % 
+% %                 caxis([min(colorbar_labels) max(colorbar_labels)]);
+% %             else
+% %                 caxis([.95*mean(colorbar_labels) 1.05*mean(colorbar_labels)]);
+% %              end 
+% %             
+%              caxis([min_length_color max_length_color]); % for arbitrary labels.
+%              
+%             title('Trajectory Lengths');
+%             uistack(image_plot, 'bottom');
+%             hold off
+% 
+%             figure(10)
+% 
+%             image_plot = imagesc(Vector2Colormap(picture_file, 'gray'));
+%              set(gca,'XDir','normal');   % set as 'reverse' or 'normal' to change
+%              set(gca, 'YDir', 'normal');% orientation of image to match other plots
+%             hold on
+%             for k = 1:length(Trace_cells);
+% 
+%                 [color_here] = speed_colors(k,:);
+% 
+%                 if isnan(color_here)
+% 
+%                     color_here = [1 1 1];
+% 
+%                 end
+% 
+%                 plot(Trace_cells{k}(1,:), Trace_cells{k}(2,:), 'Color', color_here, 'LineWidth', 2, 'Marker', '.')
+%                 hold on
+% 
+%             end
+%             hold off
+%             c_bar_speed = colorbar('YTick',0:0.1:1,'YTickMode','manual');
+%             ylabel(c_bar_speed, 'Mean Trace Speed (\mum/min)');
+% %              if min(trace_speed) ~= max(trace_speed)
+% %                 colorbar_labels = (min(trace_speed):((max(trace_speed)...
+% %                     - min(trace_speed))/10):max(trace_speed));
+% % 
+% %                 caxis([min(colorbar_labels) max(colorbar_labels)]);
+% %             else
+% %                 caxis([.95*mean(colorbar_labels) 1.05*mean(colorbar_labels)]);
+% %             end 
+% 
+%             caxis([min_speed_color max_speed_color]); % for arbitrary axis labels
+%             
+%             title('Mean Speed');
+%             uistack(image_plot, 'bottom');
+%             hold off
+% 
+% 
+% 
+%             figure(11)
+%             for k = 1:max_plot3D;
+% 
+%                 [color_here] = speed_colors(k,:);
+% 
+%                 if isnan(color_here)
+% 
+%                     color_here = [1 1 1];
+% 
+%                 end
+% 
+%                 plot3(Trace_cells{k}(1,~isnan(Trace_cells{k}(1,:))), Trace_cells{k}(2,~isnan(Trace_cells{k}(2,:)))...
+%                     , find(~isnan(Trace_cells{k}(1,:))),'Color', color_here, 'LineWidth', 2, 'Marker', '.')
+%                 hold on
+% 
+%             end
+%             hold off
+%             c_bar_speed = colorbar('YTick',0:0.1:1,'YTickMode','manual');
+%             ylabel(c_bar_speed, 'Mean Trace Speed (\mum/min)');
+%              if min(trace_speed) ~= max(trace_speed)
+%                 colorbar_labels = (min(trace_speed):((max(trace_speed)...
+%                     - min(trace_speed))/10):max(trace_speed));
+% 
+%                 caxis([min(colorbar_labels) max(colorbar_labels)]);
+%             else
+%                 caxis([.95*mean(colorbar_labels) 1.05*mean(colorbar_labels)]);
+%             end 
+%             title('Mean Speed');
+%             uistack(image_plot, 'bottom');
+%             hold off  
+% 
+%             figure(12)
+%             for k = 1:max_plot3D;
+% 
+%                 [color_here_length] = length_colors(k,:);
+% 
+%                 if isnan(color_here_length)
+% 
+%                     color_here_length = [1 1 1];
+% 
+%                 end
+% 
+%                 plot3(Trace_cells{k}(1,~isnan(Trace_cells{k}(1,:))), Trace_cells{k}(2,~isnan(Trace_cells{k}(2,:)))...
+%                     , find(~isnan(Trace_cells{k}(1,:))),'Color', color_here_length, 'LineWidth', 2, 'Marker', '.')
+%                 hold on
+% 
+%             end
+%             hold off
+%             c_bar_speed = colorbar('YTick',0:0.1:1,'YTickMode','manual');
+%             ylabel(c_bar_speed, 'Trace Length (frames)');
+%              if min(trace_speed) ~= max(trace_speed)
+%                 colorbar_labels = (min(trace_speed):((max(trace_speed)...
+%                     - min(trace_speed))/10):max(trace_speed));
+% 
+%                 caxis([min(colorbar_labels) max(colorbar_labels)]);
+%             else
+%                 caxis([.95*mean(colorbar_labels) 1.05*mean(colorbar_labels)]);
+%             end 
+%             title('Trajectory Length');
+%             uistack(image_plot, 'bottom');
+%             hold off  
+% 
+%             figure(13)
+%             for k = 1:max_plot3D;
+% 
+%                 [color_here] = [rand(1,3)];
+% 
+%                 if isnan(color_here)
+% 
+%                     color_here = [1 1 1];
+% 
+%                 end
+% 
+%                 plot3(Trace_cells{k}(1,~isnan(Trace_cells{k}(1,:))), Trace_cells{k}(2,~isnan(Trace_cells{k}(2,:)))...
+%                     , find(~isnan(Trace_cells{k}(1,:))),'Color', color_here, 'LineWidth', 2, 'Marker', '.')
+%                 hold on
+% 
+%             end
+%             hold off
+%             c_bar_speed = colorbar('YTick',0:0.1:1,'YTickMode','manual');
+%             ylabel(c_bar_speed, 'Trace Length (frames)');
+%              if min(trace_speed) ~= max(trace_speed)
+%                 colorbar_labels = (min(trace_speed):((max(trace_speed)...
+%                     - min(trace_speed))/10):max(trace_speed));
+% 
+%                 caxis([min(colorbar_labels) max(colorbar_labels)]);
+%             else
+%                 caxis([.95*mean(colorbar_labels) 1.05*mean(colorbar_labels)]);
+%             end 
+%             title('Trajectory Length');
+%             uistack(image_plot, 'bottom');
+%             hold off 
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% 
+            figure(14);
+            scatter(trace_length, trace_speed, '.')
+            title('Scatter - Length vs. Speed')
+            xlabel('Trace Length (frames)'); ylabel('Mean Speed (\mum/sec)');
+
+            Length_speed_cell{fil_count, roi_file} = [trace_length trace_speed];
+
+            Stats_cell{fil_count, roi_file} = projData.stats;
+
+
+
+        end
+        %%%%%%%%%%%%%%%%%%%%%
+
+        else
+
+              %If file is not a directory, do nothing.
+              
+
+
+
+        end
+      
+%         if fil == length(directories) && roi_file == length(roi_searcher)
+% 
+%             fil_count = fil_check;
+%         
+%         end
+                
+                %fil_count =  fil_count + 1;
+        
+end
+
+
+
+
+Report_items = find(~cellfun(@isempty, Report_cell));
+
+for k = 1:length(Report_items)
+    
+    Report_output{k} = Report_cell{Report_items(k)};
+    
+end
+
+L_s_items = find(~cellfun(@isempty, Length_speed_cell));
+
+for k = 1:length(L_s_items)
+    
+    Length_speed_out{k} = Length_speed_cell{L_s_items(k)};
+    
+end
+
+
+Just_all_items = find(~cellfun(@isempty, Just_all_of_it));
+
+for k = 1:length(Just_all_items)
+    
+    Just_all{k} = Just_all_of_it{Just_all_items(k)};
+    
+end
+
+
+
+
+stats_items = find(~cellfun(@isempty, Stats_cell));
+
+for k = 1:length(L_s_items)
+    
+    Stats_out{k} = Stats_cell{stats_items(k)};
+    
+end
+
+
+
+%clear Length_speed_cell Stats_cell %Just_all_of_it
+
+
+Summers.Inst_mean_thresh = 0;
+Summers.Inst_std_thresh = 0;
+Summers.Inst_mean = 0;
+Summers.Inst_std = 0;
+Summers.F_mean = 0;
+Summers.F_std = 0;
+
+for k = 1:length(Report_output)
+    
+	Summers.Inst_mean = Summers.Inst_mean + Report_output{k}.Inst_mean;
+	Summers.Inst_std = Summers.Inst_std + Report_output{k}.Inst_std;
+	Summers.F_mean = Summers.F_mean + Report_output{k}.F_mean;
+	Summers.F_std = Summers.F_std + Report_output{k}.F_std;
+    
+	Meta_list.Inst_mean(k) = Report_output{k}.Inst_mean;
+	Meta_list.Inst_std(k) = Report_output{k}.Inst_std;
+	Meta_list.F_mean(k) = Report_output{k}.F_mean;
+	Meta_list.F_std(k) = Report_output{k}.F_std;
+                        
+
+
+end
+
+Meta.Inst_mean = Summers.Inst_mean/length(Report_output);
+Meta.Inst_mean_std = std(Meta_list.Inst_mean);
+Meta.Inst_std = Summers.Inst_std/length(Report_output);
+Meta.F_mean = Summers.F_mean/length(Report_output);
+Meta.F_mean_std = std(Meta_list.F_mean);
+Meta.F_std = Summers.F_std/length(Report_output);
+
+for k = 1:size(ROI_area_pixels, 1)
+
+    % Convert ROI_area to square micrometers from square pixels
+    
+    % Since this works for each individual ROI it should be just fine for
+    % cases where the pixel size changes between experiments.
+    ROI_area_um(k) = ROI_area_pixels(k)*((Just_all{k}.pixSizeNm/1000)^2);
+
+end
+
+                    
+
+
