@@ -1,0 +1,573 @@
+% New (general?) analysis script.  Hopefully will be able to handle
+% variable number of fields for each measure, then assemble each into a
+% cell of structures, each structure containing the data for each variable
+% in the structure.  Will avoid the need to re-code the whole thing every
+% time there's a new experiment to do. 
+
+% String array of field names
+
+
+%Field_names = {'Growth_cone_CTRL', 'Growth_cone_GSKi', 'Axon_shaft_CTRL', 'Axon_shaft_GSKi'};
+
+%Field_names = {'CTRL_center', 'CTRL_edge', 'CLASP_center', 'CLASP_edge', 'APC_center', 'APC_edge'};
+
+%Field_names = {'CTRL_center', 'CTRL_edge', 'APC_1_center', 'APC_1_edge', 'APC_1_2_center', 'APC_1_2_edge'};
+
+% 122811
+    Field_names = {'Normal_4_Hz', 'Half_2_Hz', 'Third_1_3_Hz', 'Quarter_1_Hz'};
+
+% % K:\Data\010611\10232013
+% Field_names = {'Hz_4_Phase_0', 'Hz_2_Phase_0', 'Hz_2_Phase_180', ...
+%     'Hz_4o3_Phase_0', 'Hz_4o3_Phase_120', 'Hz_4o3_Phase_240', ...
+%     'Hz_1_Phase_0', 'Hz_1_Phase_90', 'Hz_1_Phase_180', 'Hz_1_Phase_270'};
+
+% Field_names = {'Quarter_1_Hz'};
+% 
+% Field_names = {'CTRLS', 'Taxol_1_nM', 'Taxol_3_3_nM', 'Taxol_5_nM', 'Taxol_7_5_nM', 'Taxol_10_nM'};
+% Field_names = {'CTRL_4_Hz', 'CTRL_2_Hz', 'CTRL_4_3_Hz', 'CTRL_1_Hz'};
+
+ %Field_names = {'CTRL_mid', 'CTRL_edge', 'CLASP_mid', 'CLASP_edge', 'APC_mid', 'APC_edge'};
+
+
+% Numbered by Experiment here
+
+% Assign folders to go along with field names.  Do this with ROI folders
+% included here so it only has to be done once.  Then we don't have to fool
+% with 100 lines of junk to get to a probably-the-same result.  This should
+% be the last place (including the legends!) that the field names are
+% hard-coded into this script.  Names here should match those in the
+% Field_names array.  
+
+% Center is first, then edge.  So center should be odd, edge even.
+
+
+% Recheck this VERY closely - there might be a CLASP and a CTRL switched. 
+
+% % K:\Data\010611\10232013
+
+Hz_4_Phase_0 = [640:1:645, 666:1:671, 700:1:705];
+
+Hz_2_Phase_0 = [1:9:55, 235:9:280, 541:9:586];
+Hz_2_Phase_180 = [2:9:56, 236:9:281, 542:9:587];
+
+Hz_4o3_Phase_0 = [3:9:57, 237:9:282, 543:9:588];
+Hz_4o3_Phase_120 = [4:9:58, 238:9:283, 544:9:589];
+Hz_4o3_Phase_240 = [5:9:59, 239:9:284, 545:9:590];
+
+Hz_1_Phase_0 = [6:9:60, 240:9:285, 546:9:591];
+Hz_1_Phase_90 = [7:9:61, 241:9:286, 547:9:592];
+Hz_1_Phase_180 = [8:9:62, 242:9:287, 548:9:593];
+Hz_1_Phase_270 = [9:9:63, 243:9:288, 549:9:594];
+
+
+% % Pooled with phases
+Normal_4_Hz = [640:1:645, 666:1:671, 700:1:705];
+Half_2_Hz = [Hz_2_Phase_0, Hz_2_Phase_180];
+Third_1_3_Hz = [Hz_4o3_Phase_0, Hz_4o3_Phase_120, Hz_4o3_Phase_240];
+Quarter_1_Hz = [Hz_1_Phase_0, Hz_1_Phase_90, Hz_1_Phase_180, Hz_1_Phase_270];
+
+% % Taxol with phases included 29 Oct 2013
+% % 1 Hz
+% CTRLS = [6:9:60, 7:9:61, 8:9:62, 9:9:63, ...
+%          240:9:285, 241:9:286, 242:9:287, 243:9:288];
+%          % 546:9:591, 547:9:592, 548:9:593, 549:9:594]; - See Note below.
+%           % The 546-594 data does not correspond to Taxol data here
+% Taxol_1_nM = [123:9:168, 124:9:169, 125:9:170, 126:9:171];
+% Taxol_3_3_nM = [60:9:114, 61:9:115, 62:9:116, 63:9:117];
+% Taxol_5_nM = [294:9:330, 295:9:331, 296:9:332, 297:9:333];
+% Taxol_7_5_nM = [339:9:375, 340:9:376, 341:9:377, 342:9:378];
+% Taxol_10_nM = [177:9:231, 178:9:232, 179:2:233, 180:9:234, 384:9:429, 385:9:430, 386:9:431, 387:9:432];
+
+% % 4 Hz
+% CTRLS = [640:645, 666:671]; % 700:705]; 700+ is PRN91_XXX data, which doesn't correspond to any of the Taxol data used.
+% Taxol_1_nM = 653:658;
+% Taxol_3_3_nM = 646:652;
+% Taxol_5_nM = 672:676;
+% Taxol_7_5_nM = 677:681;
+% Taxol_10_nM = 682:688;
+
+
+% CTRL = [1:6, 13:15, 22:27, 40:45, 46:51, 52:57, 76:81];
+% CLASP = [7:12, 28:33, 34:39];
+% APC = [16:21, 58:63, 64:69, 70:75];
+
+% CTRL_center = [1:2:11, 25:2:29, 43:2:53, 79:2:89, 91:2:101, 102:2:113, 151:2:159];
+% % There is no edge value in the last one for some odd reason.  No big deal.
+% CTRL_edge = [2:2:12, 26:2:30, 44:2:54, 80:2:90, 92:2:102, 104:2:114, 152:2:160];
+% 
+% CLASP_center = [13:2:23, 55:2:65, 47:2:57];
+% CLASP_edge = [14:2:24, 56:2:66, 48:2:58];
+% 
+% APC_center = [31:2:41, 115:2:125, 127:2:137, 139:2:149];
+% APC_edge = [32:2:42, 116:2:126, 128:2:138, 140:2:150];
+% % 
+% % 122811
+% Normal_4_Hz = [1:27];
+% Half_2_Hz = [28:54];
+% Third_1_3_Hz = [55:81];
+% Quarter_1_Hz = [82:108];
+
+% CTRL_4_Hz = [1:72];
+% CTRL_2_Hz = [73:144];
+% CTRL_4_3_Hz = [145:216];
+% CTRL_1_Hz = [217:288];
+
+% Normal_4_Hz = [1:6, 27:32, 61:66];
+% Half_2_Hz = [73:78, 99:104, 133:138];
+% Third_1_3_Hz = [145:150, 171:176, 205:210];
+% Quarter_1_Hz = [217:222, 243:248, 277:282];
+
+% Normal_4_Hz = [1:6, 27:32];
+% Half_2_Hz = [73:78, 99:104];
+% Third_1_3_Hz = [145:150, 171:176];
+% Quarter_1_Hz = [217:222, 243:248];
+
+% Quarter_1_Hz = 1:27;
+
+% CTRLS = [1:6, 27:32];
+% Taxol_1_nM = (14:19);
+% %List_2_2 = [];
+% %Taxol_2_2_nM = [49:54, 55:60];
+% Taxol_3_3_nM = (7:13);
+% Taxol_5_nM = (33:37);
+% Taxol_7_5_nM = (38:42);
+% Taxol_10_nM = [20:26, 43:48];
+
+% CTRLS = [1:6, 27:32, 55:60];
+% Taxol_1_nM = [14:19]; 
+% %Taxol_2_2_nM = [49:54, 61:66] ;
+% Taxol_3_3_nM = [7:13];
+% Taxol_5_nM = [33:37];
+% Taxol_7_5_nM = [38:42];
+% Taxol_10_nM = [20:26, 43:48]; 
+
+% 01/26/12
+% CTRL_center  = [13:2:23, 37:2:47, 73:2:83];
+% CTRL_edge    = [14:2:24, 38:2:48, 74:2:84];
+% APC_center   = [1:2:11, 61:2:71, 97:2:107];
+% APC_edge     = [2:2:12, 62:2:72, 98:2:108];
+% CLASP_center = [25:2:35, 49:2:59, 85:2:95];
+% CLASP_edge   = [26:2:36, 50:2:60, 86:2:96];
+
+% 04/04/12
+% Growth_cone_CTRL  = [1:2:31, 59:2:81, 107:2:119];
+% Growth_cone_GSKi = [33:2:57, 83:2:105, 121:2:135];
+% Axon_shaft_CTRL = [2:2:32, 60:2:82, 108:2:120];
+% Axon_shaft_GSKi = [34:2:58, 84:2:106, 122:2:136];
+
+% 02/06/12
+% CTRL_center     = [25:2:35, 61:2:71, 97:2:107];
+% CTRL_edge       = [26:2:36, 62:2:72, 98:2:108];
+% APC_1_center    = [13:2:23, 37:2:47, 73:2:83];
+% APC_1_edge      = [14:2:24, 38:2:48, 74:2:84];
+% APC_1_2_center  = [1:2:11, 49:2:59, 85:2:95];
+% APC_1_2_edge    = [2:2:12, 50:2:60, 86:2:96];
+
+%041612 cut 2.2 nM
+% CTRLS = [1:6, 27:32]; % , 49:54, 61:66]; 
+% Taxol_1_nM = [14:19]; 
+% %Taxol_2_2_nM = [55:60, 67:72]; 
+% Taxol_3_3_nM = [7:13] ;
+% Taxol_5_nM = [33:37]; 
+% Taxol_7_5_nM = [38:42]; 
+% Taxol_10_nM = [20:26, 43:48];
+
+% % 042912 Subtract 162
+% CTRL_mid = [13:2:23, 37:2:47, 73:2:83, 133:2:143, 169:2:179, 205:2:215];
+% CLASP_mid = [25:2:35, 49:2:59, 85:2:95, 109:2:119, 157:2:167];
+% %APC_12_mid = [1:2:11, 61:2:71, 97:2:107, 193:2:203];
+% APC_mid = [21:2:31, 145:2:155, 181:2:191];
+% 
+% CTRL_edge = [14:2:24, 38:2:48, 74:2:84, 134:2:144, 170:2:180, 206:2:216];
+% CLASP_edge = [26:2:36, 50:2:60, 86:2:96, 110:2:120, 158:2:168];
+% % APC_12_edge = [2:2:12, 62:2:72, 98:2:108, 194:2:204];
+% APC_edge = [22:2:32, 146:2:156, 182:2:192];
+
+
+
+% Put those to exclude in Cut_list.  
+%Cut_list = [19 20];
+% Cut_list = [64 85];
+
+Cut_list = []; % Taxol
+%Cut_list = [30 50 60]; % 012612
+%Cut_list = [11 41];
+
+% Cut out the Experiments you don't want to include
+
+% CTRL_center(ismember(CTRL_center, Cut_list)) = [];
+% CTRL_edge(ismember(CTRL_edge, Cut_list)) = [];
+% GSK_center(ismember(GSK_center, Cut_list)) = [];
+% GSK_edge(ismember(GSK_edge, Cut_list)) = [];
+% CLASP_center(ismember(CLASP_center, Cut_list)) = [];
+% CLASP_edge(ismember(CLASP_edge, Cut_list)) = [];
+% APC_center(ismember(APC_center, Cut_list)) = [];
+% APC_edge(ismember(APC_edge, Cut_list)) = [];
+% APC_1_center(ismember(APC_1_center, Cut_list)) = [];
+% APC_1_edge(ismember(APC_1_edge, Cut_list)) = [];
+% APC_1_2_center(ismember(APC_1_2_center, Cut_list)) = [];
+% APC_1_2_edge(ismember(APC_1_2_edge, Cut_list)) = [];
+
+% % 042912 Subtract 162
+% CTRL_mid(ismember(CTRL_mid, Cut_list)) = [];
+% CTRL_edge(ismember(CTRL_edge, Cut_list)) = [];
+% CLASP_mid(ismember(CLASP_mid, Cut_list)) = [];
+% CLASP_edge(ismember(CLASP_edge, Cut_list)) = [];
+% APC_mid(ismember(APC_mid, Cut_list)) = [];
+% APC_edge(ismember(APC_edge, Cut_list)) = [];
+
+% 
+% CTRL_4_Hz(ismember(CTRL_4_Hz, Cut_list)) = [];
+% CTRL_2_Hz(ismember(CTRL_2_Hz, Cut_list)) = [];
+% CTRL_4_3_Hz(ismember(CTRL_4_3_Hz, Cut_list)) = [];
+% CTRL_1_Hz(ismember(CTRL_1_Hz, Cut_list)) = [];
+
+% Normal_4_Hz(ismember(Normal_4_Hz, Cut_list)) = [];
+% Half_2_Hz(ismember(Half_2_Hz, Cut_list)) = [];
+% Third_1_3_Hz(ismember(Third_1_3_Hz, Cut_list)) = [];
+% Quarter_1_Hz(ismember(Quarter_1_Hz, Cut_list)) = [];
+
+% CTRLS(ismember(CTRLS, Cut_list)) = [];
+% Taxol_1_nM(ismember(Taxol_1_nM, Cut_list)) = [];
+% Taxol_3_3_nM(ismember(Taxol_3_3_nM, Cut_list)) = [];
+% Taxol_5_nM(ismember(Taxol_5_nM, Cut_list)) = [];
+% Taxol_7_5_nM(ismember(Taxol_7_5_nM, Cut_list)) = [];
+% Taxol_10_nM(ismember(Taxol_10_nM, Cut_list)) = [];
+
+% Growth_cone_CTRL(ismember(Growth_cone_CTRL, Cut_list)) = [];
+% Growth_cone_GSKi(ismember(Growth_cone_GSKi, Cut_list)) = [];
+% Axon_shaft_CTRL(ismember(Axon_shaft_CTRL, Cut_list)) = [];
+% Axon_shaft_GSKi(ismember(Axon_shaft_GSKi, Cut_list)) = [];
+
+% Quarter_1_Hz(ismember(Quarter_1_Hz, Cut_list)) = [];
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Start by initializing structures with the proper field names.  
+
+Results = [];
+
+for k = 1:numel(Field_names)
+
+Results(k).name = Field_names{k};
+Results(k).folders = eval(Results(k).name);
+
+end
+
+val_inq = zeros(length(Results), 1);
+
+for k = 1:length(Results);
+    
+        val_inq(k) = max(Results(k).folders);
+end
+
+List_to_use = 1:max(val_inq);
+List_to_use(ismember(List_to_use, Cut_list)) = [];
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Piece together all of the other mess that we need 
+
+% All_together 
+
+All_together = [];
+
+
+for k = 1:length(List_to_use);
+    
+    All_together{k} = Just_all_of_it{List_to_use(k)}.nTrack_sF_eF_vMicPerMin_trackType_lifetime_totalDispPix;
+    
+end
+
+All_speeds = zeros(max(cellfun(@length, All_together)), length(List_to_use));
+
+for k = 1:length(List_to_use);
+    
+    All_speeds(1:sum(All_together{k}(:,5) == 1), k) = ...
+        All_together{k}((All_together{k}(:,5) == 1),4);
+    
+end
+
+All_speeds(All_speeds == 0) = NaN;
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Instant data and all the stuff that goes along with that
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+        %           5. subtrack type
+        %              (1=growth, 2=forward gap, 3=backward gap, 4=unclassifed gap,
+        %              5=forward gap reclassified as growth, 6=backward gap
+        %              reclassified as pause)
+        
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+subtrack_fields = {'growth', 'forward_gap', 'backward_gap', 'unclassified_gap'...
+                       'forward_reclassified', 'backward_reclassified'};
+
+for p = 1:length(Results)
+    
+    Stats_here = {};
+    Speed_here = [];
+    Useful_here = [];
+    Useful_temp = [];
+    Instant_temp = [];
+    Sum_vector = [];
+
+    %Track_type_prob_here(6).struct = [];
+
+	Instant_temp = [];
+    Useful_bank = [];
+	F_vector_here = [];
+    
+    for subtrack_type = 1:6
+    
+        Instant.(subtrack_fields{subtrack_type}) = [];
+        F_vector.(subtrack_fields{subtrack_type}) = [];
+        
+    end
+        
+        for k = 1:length(Results(p).folders);
+    
+        Stats_here{k} = Stats_out{Results(p).folders(k)};
+        Speed_here = [Speed_here; Length_speed_out{Results(p).folders(k)}(:,2)];
+        Useful_here = [Useful_here; Just_all{Results(p).folders(k)}.nTrack_sF_eF_vMicPerMin_trackType_lifetime_totalDispPix];
+        
+        Num_comets = zeros(Just_all{1}.nFrames, 6);
+
+                        
+
+        Instant_temp = Just_all{Results(p).folders(k)}.frame2frameVel_micPerMin;
+            
+
+        Useful_bank = Just_all{Results(p).folders(k)}.nTrack_sF_eF_vMicPerMin_trackType_lifetime_totalDispPix;  
+            
+            %         
+%             Sum_vector(k) = nansum((Just_all{Results(p).folders(k)}.secPerFrame)*...
+%             Just_all{Results(p).folders(k)}.frame2frameVel_micPerMin(:)/(60))./(Just_all{Results(p).folders(k)}.nFrames*...
+%             Just_all{Results(p).folders(k)}.secPerFrame/60);
+%         
+%         Sum_check = Sum_vector;
+%         
+        Sum_vector(k) = nansum((Just_all{Results(p).folders(k)}.secPerFrame)*Just_all{Results(p).folders(k)}.frame2frameVel_micPerMin(:)/(60))/(Just_all{Results(p).folders(k)}.nFrames*Just_all{Results(p).folders(k)}.secPerFrame/60);
+    
+            
+        
+            
+            for subtrack_type = 1:6
+                
+                Instant_temp_here = [];
+                Useful_temp = [];
+                F_vector_here = [];
+                
+                Useful_temp = Useful_bank;
+                Useful_temp(~ismember(Useful_temp(:,5), subtrack_type), :) = [];
+    
+    
+                for m = 1:size(Useful_temp, 1)
+        
+                    Instant_temp_here = [Instant_temp_here; (Instant_temp(Useful_temp(m,1),(Useful_temp(m,2):(Useful_temp(m,3)-1))))'];
+                    F_vector_here = [F_vector_here; abs(Useful_temp(m,4))];
+        
+                end
+                
+
+    
+                Instant.(subtrack_fields{subtrack_type}) = [Instant.(subtrack_fields{subtrack_type}); Instant_temp_here];
+                F_vector.(subtrack_fields{subtrack_type}) = [F_vector.(subtrack_fields{subtrack_type}); F_vector_here];
+                %Track_type_prob_here(subtrack_type).struct = [Track_type_prob_here(subtrack_type).struct; sum(~isnan(Instant_temp_here(:)))/sum(~isnan(Instant_temp(:)))];
+            
+
+            end
+            
+            
+    
+        Num_comets = zeros(Just_all{Results(p).folders(k)}.nFrames, 1);
+    
+        for h = 1:length(Num_comets)
+    
+                Num_comets(h,1) = size(Useful_here((Useful_here(:,2) <= k & Useful_here(:,3) >= h), 2:3), 1);
+    
+        end
+    
+    end
+
+    
+    Results(p).Stats = Stats_here;
+    Results(p).Speed = Speed_here;
+
+    Results(p).Instants = Instant;
+    Results(p).F_vector = F_vector;
+
+    Results(p).Num_comets = Num_comets;
+    
+    Results(p).Sum_vector = Sum_vector;
+    
+
+end
+
+%%%%%% Make Speed Vector
+
+val_inq = zeros(length(Results), 1);
+
+for k = 1:length(Results);
+    
+        val_inq(k) = length(Results(k).Speed);
+end
+
+Speed_vector = zeros(max(val_inq),numel(val_inq));
+
+for k = 1:length(Results)
+    
+    Speed_vector(1:length(Results(k).Speed), k) = Results(k).Speed;
+    
+end
+
+%%%%%% Make ROI_area
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+% Collect ROI_area into a single vector.  This is ROI area by cell.  Figured up in the 
+% plusTips_analyzer_correcting script to grab it in square micrometers.  
+    
+val_inq = zeros(length(Results), 1);
+
+for k = 1:length(Results);
+    
+        val_inq(k) = numel(Results(k).folders);
+end
+
+ROI_area_here = zeros(max(val_inq),numel(val_inq));
+
+for k = 1:length(Results)
+    
+    ROI_area_here(1:length(Results(k).folders), k) = ROI_area_um(Results(k).folders);
+    
+    % Gotta correct Num_comets for density here since you can't do it
+    % above.
+    
+    % Fixed! 01/02/11
+    
+    %Results(k).Num_comets = Results(k).Num_comets./(ROI_area_um(Results(k).folders));
+    Results(k).Instant_sums = Results(k).Sum_vector./(ROI_area_um(Results(k).folders));
+    
+end
+
+
+
+
+
+%%%%%%%% Instant_vector isn't needed since it's taken care of above.  You
+%%%%%%%% can just re-arrange what you want to plot to make this if you
+%%%%%%%% really want to later and even pick which values to use in the
+%%%%%%%% plotting.  Results.Instants is a cell array in index of
+%%%%%%%% Results(experiment).Instants{1,subtrack_type}.
+
+%%%%%%%% Same is done with F_vector.  Put together above, in index of
+%%%%%%%% Results(experiment).F_vector{1, subtrack_type}.
+
+% Need to get to Detects_by_cell
+
+% Error here fixed 01/02/12
+
+val_inq = zeros(length(Results), 1);
+
+for k = 1:length(Results);
+    
+        val_inq(k) = numel(Results(k).folders);
+        Results(k).Detects_by_cell = zeros(max(val_inq),numel(val_inq));
+end
+
+
+
+for p = 1:length(Results)
+
+Detects_here = zeros(Just_all{Results(p).folders(1)}.nFrames,numel(Results(p).folders));
+
+for k = 1:numel(Results(p).folders)
+    
+    Dummy_1 = Mov_pile(Results(p).folders(k)).file;
+        Dummy_2 = Dummy_1.movieInfo;
+        
+        Dummy_3 = zeros(Just_all{Results(p).folders(k)}.nFrames, 1);
+        
+        for q = 1:length(Dummy_2)
+            Dummy_3(q) = size(Dummy_2(q).xCoord, 1);
+        end
+        
+        Detects_here(1:length(Dummy_3), k) = Dummy_3;
+    
+end
+
+% for k = 1:numel(List_10_use)
+%     
+%     Dummy_1 = Mov_pile(List_10_use(k)).file;
+%         Dummy_2 = Dummy_1.movieInfo;
+%         
+%         Dummy_3 = zeros(Just_all{1}.nFrames, 1);
+%         
+%         for p = 1:length(Dummy_2)
+%             Dummy_3(p) = size(Dummy_2(p).xCoord, 1);
+%         end
+%         
+%         Taxol_detects_10(:, k) = Dummy_3;
+%     
+% end
+
+
+Detects_here(Detects_here == 0) = NaN;
+
+Detects_by_cell_single = (nanmean(Detects_here, 1)./(ROI_area_um(Results(p).folders)))';
+
+Detects_by_cell(1:length(Detects_by_cell_single),1) = Detects_by_cell_single;
+Detects_by_cell(Detects_by_cell == 0) = NaN;
+
+for j = 1:length(Results)
+
+    Results(j).Detects_by_cell(1:length(Detects_by_cell_single),p) = Detects_by_cell_single;
+    
+end
+
+end
+
+
+
+%%%%%  Stats - get all of them in one structure
+
+cum_list(1:length(Results),1) = 25*(1:length(Results));
+
+Stats_fields = fieldnames(Results(1).Stats{1});
+
+
+
+for p = 1:length(Results)
+    
+    for q = 1:length(Stats_fields) 
+
+        Stats_holder = [];
+        
+        for k = 1:length(Results(p).folders)
+            
+            Stats_holder = [Stats_holder; Results(p).Stats{k}.(Stats_fields{q})];
+            
+        end
+        
+        Results(p).Stats_total.(Stats_fields{q}) = Stats_holder;
+        
+    end
+    
+end
+
+
+%%% Total polymerization rate worked out above
+
+
+%%%%%%%%%%%%%%% Let the plotting begin!  %%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+% Only going to do the basic plots, and then later scripts can do whatever
+% they need to with the assembed data in accessable structures.  
+
+figure(12)
+bk = boxplot(All_speeds, 'notch', 'on');
+set(bk, 'linewidth', 2);
+set(bk(7,:),'Visible','on')  
+
+%%% Stats calculated later in plotting routines.  That way you only need to
+%%% do the ones that you, well, need to do.  
